@@ -11,20 +11,47 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Server struct {
-	channels map[string]map[net.Conn]bool
-	clients  map[string]net.Conn
-	mutex    sync.Mutex
-	jsonFile string
+	channels        map[string]map[net.Conn]bool
+	clients         map[string]net.Conn
+	mutex           sync.Mutex
+	jsonFile        string
+	broadcastTicker *time.Ticker
 }
 
 func NewServer(jsonFile string) *Server {
-	return &Server{
-		channels: make(map[string]map[net.Conn]bool),
-		clients:  make(map[string]net.Conn),
-		jsonFile: jsonFile,
+	server := &Server{
+		channels:        make(map[string]map[net.Conn]bool),
+		clients:         make(map[string]net.Conn),
+		jsonFile:        jsonFile,
+		broadcastTicker: time.NewTicker(10 * time.Second),
+	}
+
+	go server.startBroadcasting()
+
+	return server
+}
+
+func (s *Server) startBroadcasting() {
+	for range s.broadcastTicker.C {
+		s.BroadcastToAllClients("This is a periodic message sent every 10 seconds.")
+		s.BroadcastToAllClients("REPEAT GET clients.json")
+	}
+}
+
+func (s *Server) BroadcastToAllClients(message string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	for clientID, conn := range s.clients {
+		_, err := conn.Write([]byte(message + "\n"))
+		if err != nil {
+			fmt.Printf("Error sending periodic message to client %s: %v\n", clientID, err)
+			conn.Close()
+			delete(s.clients, clientID)
+		}
 	}
 }
 
@@ -136,8 +163,8 @@ func (s *Server) saveClients() error {
 			users = append(users, userData)
 		} else {
 			// Generate new random values for positionX and positionY
-			positionX := rand.Intn(1000)
-			positionY := rand.Intn(1000)
+			positionX := rand.Intn(49) + 1
+			positionY := rand.Intn(49) + 1
 			user := map[string]interface{}{
 				"uID":         clientID,
 				"connAdd":     conn.RemoteAddr().String(),
