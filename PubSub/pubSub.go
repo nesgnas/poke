@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"io"
-	"math/rand"
 	"net"
 	"os"
 	"strings"
@@ -30,7 +29,7 @@ func NewServer(jsonFile string) *Server {
 		broadcastTicker: time.NewTicker(10 * time.Second),
 	}
 
-	go server.startBroadcasting()
+	//go server.startBroadcasting()
 
 	return server
 }
@@ -163,8 +162,8 @@ func (s *Server) saveClients() error {
 			users = append(users, userData)
 		} else {
 			// Generate new random values for positionX and positionY
-			positionX := rand.Intn(49) + 1
-			positionY := rand.Intn(49) + 1
+			positionX := -1
+			positionY := -1
 			user := map[string]interface{}{
 				"uID":         clientID,
 				"connAdd":     conn.RemoteAddr().String(),
@@ -343,9 +342,14 @@ func (s *Server) broadcastClientsJSON(fileName string) {
 } // sent file to Client
 
 func (s *Server) HandleConnection(conn net.Conn) {
+
 	defer conn.Close()
 	clientID := s.addClient(conn)
-	defer s.removeClient(clientID)
+	s.BroadcastToAllClients("REPEAT GET clients.json")
+	defer func() {
+		s.removeClient(clientID)
+		s.BroadcastToAllClients("REPEAT GET clients.json")
+	}()
 
 	//s.broadcastClientsJSON(s.jsonFile)
 
