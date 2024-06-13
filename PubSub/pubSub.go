@@ -4,13 +4,15 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
+	"math/rand"
 	"net"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Server struct {
@@ -19,6 +21,32 @@ type Server struct {
 	mutex           sync.Mutex
 	jsonFile        string
 	broadcastTicker *time.Ticker
+}
+
+type Pokemon struct {
+	UID string `json:"uid"`
+	ID  int    `json:"id"`
+	Exp int    `json:"exp"`
+	EV  float64    `json:"ev"`
+	LV  int    `json:"lv"`
+}
+
+func createRandomPokemon() Pokemon {
+	return Pokemon{
+		UID: uuid.New().String(),
+		ID:  rand.Intn(898) + 1, // Random ID between 0 and 99
+		Exp: 0,
+		EV:  0.5 + rand.Float64()*0.5,
+		LV:  rand.Intn(5) + 1,
+	}
+}
+
+func createRandomListPokemon(n int) []Pokemon {
+	listPokemon := make([]Pokemon, n)
+	for i := 0; i < n; i++ {
+		listPokemon[i] = createRandomPokemon()
+	}
+	return listPokemon
 }
 
 func NewServer(jsonFile string) *Server {
@@ -119,7 +147,7 @@ func (s *Server) removeClient(id string) {
 	fmt.Println("Client data removed from JSON file.")
 }
 
-func (s *Server) saveClients() error {
+func (s *Server) saveClients(list []Pokemon) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -169,7 +197,7 @@ func (s *Server) saveClients() error {
 				"connAdd":     conn.RemoteAddr().String(),
 				"positionX":   positionX,
 				"positionY":   positionY,
-				"listPokemon": []interface{}{},
+				"listPokemon": []interface{}{list},
 				"maxValue":    "",
 				"spaceLeft":   "",
 			}
@@ -195,14 +223,14 @@ func (s *Server) saveClients() error {
 	return nil
 }
 
-func (s *Server) addClient(conn net.Conn) string {
+func (s *Server) addClient(conn net.Conn, list []Pokemon) string {
 	id := uuid.New().String()
 	s.mutex.Lock()
 	s.clients[id] = conn
 	s.mutex.Unlock()
 
 	// Save the client's data including positionX and positionY
-	err := s.saveClients()
+	err := s.saveClients(list)
 	if err != nil {
 		fmt.Printf("Error saving client data: %v\n", err)
 	}
@@ -344,7 +372,11 @@ func (s *Server) broadcastClientsJSON(fileName string) {
 func (s *Server) HandleConnection(conn net.Conn) {
 
 	defer conn.Close()
-	clientID := s.addClient(conn)
+
+	// Random Pokemon List
+	list := createRandomListPokemon(3)
+
+	clientID := s.addClient(conn, list)
 	s.BroadcastToAllClients("REPEAT GET clients.json")
 	defer func() {
 		s.removeClient(clientID)
