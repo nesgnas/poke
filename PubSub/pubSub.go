@@ -388,8 +388,10 @@ func (s *Server) HandleConnection(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		line := scanner.Text()
-		parts := strings.SplitN(line, " ", 3)
+		parts := strings.SplitN(line, " ", 10)
+		fmt.Println(parts)
 		command := parts[0]
+		fmt.Println(command)
 
 		switch command {
 		case "SUBSCRIBE":
@@ -399,11 +401,16 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			channel := parts[1]
 			s.AddSubscriber(channel, conn)
 		case "PUBLISH":
-			if len(parts) < 3 {
+			if len(parts) < 2 {
 				continue
 			}
 			channel := parts[1]
-			message := parts[2]
+
+			message := ""
+			for i := 0; i < len(parts); i++ {
+				message += parts[i] + " "
+			}
+			fmt.Println(message)
 			s.PublishMessage(channel, message)
 		case "UNSUBSCRIBE":
 			if len(parts) < 2 {
