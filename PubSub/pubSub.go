@@ -31,6 +31,35 @@ type Pokemon struct {
 	LV  int    `json:"lv"`
 }
 
+type PokemonWorld struct {
+	Pokemon Pokemon
+	Position struct {
+		X int `json:"x"`
+		Y int `json:"y"`
+	} `json:"position"`
+}
+
+func createRandomPokemonWorld() PokemonWorld {
+	return PokemonWorld{
+		Pokemon: createRandomPokemon(),
+		Position: struct {
+			X int `json:"x"`
+			Y int `json:"y"`
+		}{
+			X: rand.Intn(100),
+			Y: rand.Intn(100),
+		},
+	}
+}
+
+func createRandomListPokemonWorld(n int) []PokemonWorld {
+	listPokemonWorld := make([]PokemonWorld, n)
+	for i := 0; i < n; i++ {
+		listPokemonWorld[i] = createRandomPokemonWorld()
+	}
+	return listPokemonWorld
+}
+
 func createRandomPokemon() Pokemon {
 	return Pokemon{
 		UID: uuid.New().String(),
@@ -47,6 +76,38 @@ func createRandomListPokemon(n int) []Pokemon {
 		listPokemon[i] = createRandomPokemon()
 	}
 	return listPokemon
+}
+
+func (s *Server) integrateMatchingPokemonIntoClients() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Load current clients' positions
+	var clientsPositions map[string]struct{}
+	loadClientsPositions(clientsPositions)
+
+	// Load current Pokemon data
+	var pokemons []Pokemon
+	loadPokemons(pokemons)
+
+	// Iterate over Pokemon, checking for matches with client positions
+	for i := range pokemons {
+			if _, exists := clientsPositions[pokemons[i].Position.X, pokemons[i].Position.Y]; exists {
+					// Found a match, integrate this Pokemon into clients.json
+					// Assuming there's a function to update clients.json with additional Pokemon data
+					updateClientsWithAdditionalPokemonData(pokemons[i])
+					
+					// Remove this Pokemon from the list since it's been integrated
+					pokemons = append(pokemons[:i], pokemons[i+1:]...)
+					i-- // Adjust index after removal
+			}
+	}
+
+	// Save the updated Pokemon data back to the JSON file
+	err := s.saveToJSONFile("pokemons.json", pokemons)
+	if err!= nil {
+			fmt.Printf("Error saving Pokemon data: %v\n", err)
+	}
 }
 
 func NewServer(jsonFile string) *Server {
@@ -317,8 +378,8 @@ func (s *Server) saveClients(list []Pokemon) error {
 			users = append(users, userData)
 		} else {
 			// Generate new random values for positionX and positionY
-			positionX := rand.Intn(100)
-			positionY := rand.Intn(100)
+			positionX := rand.Intn(50)
+			positionY := rand.Intn(50)
 			direction := rand.Intn(4) + 1 // Up, Down, Left, Right (1, 2, 3, 4)
 			user := map[string]interface{}{
 				"uID":         clientID,
