@@ -24,11 +24,11 @@ type Server struct {
 }
 
 type Pokemon struct {
-	UID string `json:"uid"`
-	ID  int    `json:"id"`
-	Exp int    `json:"exp"`
-	EV  float64    `json:"ev"`
-	LV  int    `json:"lv"`
+	UID string  `json:"uid"`
+	ID  int     `json:"id"`
+	Exp int     `json:"exp"`
+	EV  float64 `json:"ev"`
+	LV  int     `json:"lv"`
 }
 
 func createRandomPokemon() Pokemon {
@@ -317,8 +317,8 @@ func (s *Server) saveClients(list []Pokemon) error {
 			users = append(users, userData)
 		} else {
 			// Generate new random values for positionX and positionY
-			positionX := rand.Intn(100)
-			positionY := rand.Intn(100)
+			positionX := rand.Intn(50)
+			positionY := rand.Intn(50)
 			direction := rand.Intn(4) + 1 // Up, Down, Left, Right (1, 2, 3, 4)
 			user := map[string]interface{}{
 				"uID":         clientID,
@@ -328,7 +328,7 @@ func (s *Server) saveClients(list []Pokemon) error {
 				"listPokemon": []interface{}{list},
 				"maxValue":    "",
 				"spaceLeft":   "",
-				"direction":  direction,
+				"direction":   direction,
 			}
 			users = append(users, user)
 		}
