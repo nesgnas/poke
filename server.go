@@ -15,6 +15,8 @@ func main() {
 	}
 	defer ln.Close()
 
+	PubSub.InitiatePoke()
+
 	fmt.Println("Server started on :8080")
 
 	// Start the console command handler
