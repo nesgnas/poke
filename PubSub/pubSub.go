@@ -54,10 +54,10 @@ func NewServer(jsonFile string) *Server {
 		channels:        make(map[string]map[net.Conn]bool),
 		clients:         make(map[string]net.Conn),
 		jsonFile:        jsonFile,
-		broadcastTicker: time.NewTicker(10 * time.Second),
+		broadcastTicker: time.NewTicker(5 * time.Second),
 	}
 
-	//go server.startBroadcasting()
+	go server.startBroadcasting()
 
 	return server
 }
@@ -66,6 +66,133 @@ func (s *Server) startBroadcasting() {
 	for range s.broadcastTicker.C {
 		s.BroadcastToAllClients("This is a periodic message sent every 10 seconds.")
 		s.BroadcastToAllClients("REPEAT GET clients.json")
+
+		s.sendRandomDirectionToClients()
+		// Up Down Left Right (1, 2, 3, 4)
+		s.updateClientsPosition()
+	}
+}
+
+func (s *Server) updateClientsPosition() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Open the clients.json file
+	file, err := os.Open(s.jsonFile)
+	if err != nil {
+		fmt.Printf("Error opening clients.json file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	// Decode the existing users into map A
+	var A map[string]interface{}
+	if err := json.NewDecoder(file).Decode(&A); err != nil && err != io.EOF {
+		fmt.Printf("Error decoding clients.json file: %v\n", err)
+		return
+	}
+
+	// If map A is nil or user key is nil, initialize it as an empty slice
+	if A == nil {
+		A = make(map[string]interface{})
+	}
+	if A["user"] == nil {
+		A["user"] = []interface{}{}
+	}
+
+	// Update the position for each client based on their direction
+	for clientID := range s.clients {
+		for _, u := range A["user"].([]interface{}) {
+			user := u.(map[string]interface{})
+			if user["uID"] == clientID {
+				direction := int(user["direction"].(float64))
+				positionX := int(user["positionX"].(float64))
+				positionY := int(user["positionY"].(float64))
+
+				switch direction {
+				case 1: // Up
+					positionY -= 1
+				case 2: // Down
+					positionY += 1
+				case 3: // Left
+					positionX -= 1
+				case 4: // Right
+					positionX += 1
+				}
+
+				user["positionX"] = positionX
+				user["positionY"] = positionY
+				break
+			}
+		}
+	}
+
+	// Encode and save the updated map A to JSON file
+	file, err = os.Create(s.jsonFile)
+	if err != nil {
+		fmt.Printf("Error creating clients.json file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	if err := encoder.Encode(A); err != nil {
+		fmt.Printf("Error encoding clients data to JSON file: %v\n", err)
+		return
+	}
+}
+
+func (s *Server) sendRandomDirectionToClients() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Open the clients.json file
+	file, err := os.Open(s.jsonFile)
+	if err != nil {
+		fmt.Printf("Error opening clients.json file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	// Decode the existing users into map A
+	var A map[string]interface{}
+	if err := json.NewDecoder(file).Decode(&A); err != nil && err != io.EOF {
+		fmt.Printf("Error decoding clients.json file: %v\n", err)
+		return
+	}
+
+	// If map A is nil or user key is nil, initialize it as an empty slice
+	if A == nil {
+		A = make(map[string]interface{})
+	}
+	if A["user"] == nil {
+		A["user"] = []interface{}{}
+	}
+
+	// Update the direction for each client
+	for clientID := range s.clients {
+		for _, u := range A["user"].([]interface{}) {
+			user := u.(map[string]interface{})
+			if user["uID"] == clientID {
+				direction := rand.Intn(4) + 1 // Up, Down, Left, Right (1, 2, 3, 4)
+				user["direction"] = direction
+				break
+			}
+		}
+	}
+
+	// Encode and save the updated map A to JSON file
+	file, err = os.Create(s.jsonFile)
+	if err != nil {
+		fmt.Printf("Error creating clients.json file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	if err := encoder.Encode(A); err != nil {
+		fmt.Printf("Error encoding clients data to JSON file: %v\n", err)
+		return
 	}
 }
 
@@ -190,8 +317,9 @@ func (s *Server) saveClients(list []Pokemon) error {
 			users = append(users, userData)
 		} else {
 			// Generate new random values for positionX and positionY
-			positionX := -1
-			positionY := -1
+			positionX := rand.Intn(100)
+			positionY := rand.Intn(100)
+			direction := rand.Intn(4) + 1 // Up, Down, Left, Right (1, 2, 3, 4)
 			user := map[string]interface{}{
 				"uID":         clientID,
 				"connAdd":     conn.RemoteAddr().String(),
@@ -200,6 +328,7 @@ func (s *Server) saveClients(list []Pokemon) error {
 				"listPokemon": []interface{}{list},
 				"maxValue":    "",
 				"spaceLeft":   "",
+				"direction":  direction,
 			}
 			users = append(users, user)
 		}
