@@ -102,37 +102,100 @@ func createRandomListPokemon(n int) []Pokemon {
 	return listPokemon
 }
 
-//func (s *Server) integrateMatchingPokemonIntoClients() {
-//	s.mutex.Lock()
-//	defer s.mutex.Unlock()
-//
-//	// Load current clients' positions
-//	var clientsPositions map[string]struct{}
-//	//loadClientsPositions(clientsPositions)
-//
-//	// Load current Pokemon data
-//	var pokemons []Pokemon
-//	//loadPokemons(pokemons)
-//
-//	// Iterate over Pokemon, checking for matches with client positions
-//	for i := range pokemons {
-//			if _, exists := clientsPositions[pokemons[i].Position.X, pokemons[i].Position.Y]; exists {
-//					// Found a match, integrate this Pokemon into clients.json
-//					// Assuming there's a function to update clients.json with additional Pokemon data
-//					updateClientsWithAdditionalPokemonData(pokemons[i])
-//
-//					// Remove this Pokemon from the list since it's been integrated
-//					pokemons = append(pokemons[:i], pokemons[i+1:]...)
-//					i-- // Adjust index after removal
-//			}
-//	}
-//
-//	// Save the updated Pokemon data back to the JSON file
-//	err := s.saveToJSONFile("pokemons.json", pokemons)
-//	if err!= nil {
-//			fmt.Printf("Error saving Pokemon data: %v\n", err)
-//	}
-//}
+func (s *Server) IntegrateMatchingPokemonIntoClients() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Load current clients' positions
+	clientsFile, err := os.Open(s.jsonFile)
+	if err != nil {
+		fmt.Printf("Error opening clients.json file: %v\n", err)
+		return
+	}
+	defer clientsFile.Close()
+
+	var clientsData map[string]interface{}
+	if err := json.NewDecoder(clientsFile).Decode(&clientsData); err != nil {
+		fmt.Printf("Error decoding clients.json file: %v\n", err)
+		return
+	}
+
+	// Load current Pokemon data
+	pokemonFile, err := os.Open("PokemonWorld.json")
+	if err != nil {
+		fmt.Printf("Error opening PokemonWorld.json file: %v\n", err)
+		return
+	}
+	defer pokemonFile.Close()
+
+	var pokemonWorldList PokemonWorldList
+	if err := json.NewDecoder(pokemonFile).Decode(&pokemonWorldList); err != nil {
+		fmt.Printf("Error decoding PokemonWorld.json file: %v\n", err)
+		return
+	}
+
+	// Check for matches and integrate Pokémon
+	for _, userInterface := range clientsData["user"].([]interface{}) {
+		user := userInterface.(map[string]interface{})
+		userPosX := int(user["positionX"].(float64))
+		userPosY := int(user["positionY"].(float64))
+
+		// Iterate over Pokemon, checking for matches with user positions
+		for i, pokemonWorld := range pokemonWorldList.PokemonWorlds {
+			if pokemonWorld.Position.X == userPosX && pokemonWorld.Position.Y == userPosY {
+				// Found a match, add this Pokemon to the user's listPokemon
+				pokemon := pokemonWorld.Pokemon
+
+				// Convert existing listPokemon to slice of Pokemon
+				var listPokemon []Pokemon
+				if user["listPokemon"] != nil {
+					for _, p := range user["listPokemon"].([]interface{}) {
+						pBytes, _ := json.Marshal(p)
+						var pokemonObj Pokemon
+						json.Unmarshal(pBytes, &pokemonObj)
+						listPokemon = append(listPokemon, pokemonObj)
+					}
+				}
+
+				listPokemon = append(listPokemon, pokemon)
+				user["listPokemon"] = listPokemon
+
+				// Remove this Pokemon from the PokemonWorldList since it's been integrated
+				pokemonWorldList.PokemonWorlds = append(pokemonWorldList.PokemonWorlds[:i], pokemonWorldList.PokemonWorlds[i+1:]...)
+				break
+			}
+		}
+	}
+
+	// Save the updated clients data back to the JSON file
+	clientsFile, err = os.Create(s.jsonFile)
+	if err != nil {
+		fmt.Printf("Error creating clients.json file: %v\n", err)
+		return
+	}
+	defer clientsFile.Close()
+
+	encoder := json.NewEncoder(clientsFile)
+	if err := encoder.Encode(clientsData); err != nil {
+		fmt.Printf("Error encoding clients data to JSON file: %v\n", err)
+		return
+	}
+
+	// Save the updated Pokemon data back to the JSON file
+	pokemonFile, err = os.Create("PokemonWorld.json")
+	if err != nil {
+		fmt.Printf("Error creating PokemonWorld.json file: %v\n", err)
+		return
+	}
+	defer pokemonFile.Close()
+
+	pokemonEncoder := json.NewEncoder(pokemonFile)
+	if err := pokemonEncoder.Encode(pokemonWorldList); err != nil {
+		fmt.Printf("Error encoding Pokemon data to JSON file: %v\n", err)
+		return
+	}
+	fmt.Println("complete####")
+}
 
 func NewServer(jsonFile string) *Server {
 	server := &Server{
@@ -169,6 +232,7 @@ func (s *Server) startBroadcasting() {
 		s.sendRandomDirectionToClients()
 		// Up Down Left Right (1, 2, 3, 4)
 		s.updateClientsPosition()
+		s.IntegrateMatchingPokemonIntoClients()
 	}
 
 }
