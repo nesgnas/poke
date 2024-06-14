@@ -19,6 +19,7 @@ func main() {
 
 	// Start the console command handler
 	go PubSub.HandleServerCommands(server)
+	PubSub.InitiatePoke()
 
 	for {
 		conn, err := ln.Accept()

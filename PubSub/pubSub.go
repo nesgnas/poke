@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"net"
 	"os"
@@ -15,12 +16,30 @@ import (
 	"github.com/google/uuid"
 )
 
+func InitiatePoke() {
+
+	pokemonWorldList := createRandomPokemonWorldList(50)
+
+	data, err := json.MarshalIndent(pokemonWorldList, "", "  ")
+	if err != nil {
+		fmt.Println("Error marshalling JSON:", err)
+		return
+	}
+
+	err = ioutil.WriteFile("PokemonWorld.json", data, 0644)
+	if err != nil {
+		fmt.Println("Error writing file:", err)
+		return
+	}
+}
+
 type Server struct {
-	channels        map[string]map[net.Conn]bool
-	clients         map[string]net.Conn
-	mutex           sync.Mutex
-	jsonFile        string
-	broadcastTicker *time.Ticker
+	channels            map[string]map[net.Conn]bool
+	clients             map[string]net.Conn
+	mutex               sync.Mutex
+	jsonFile            string
+	broadcastTicker     *time.Ticker
+	broadcastTickerPoke *time.Ticker
 }
 
 type Pokemon struct {
@@ -31,14 +50,48 @@ type Pokemon struct {
 	LV  int     `json:"lv"`
 }
 
+type Position struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+type PokemonWorld struct {
+	Pokemon  Pokemon  `json:"pokemon"`
+	Position Position `json:"position"`
+}
+
+type PokemonWorldList struct {
+	PokemonWorlds []PokemonWorld `json:"PokemonWorld"`
+}
+
+func createRandomPokemonWorld() PokemonWorld {
+	return PokemonWorld{
+		Pokemon: createRandomPokemon(),
+		Position: Position{
+			X: rand.Intn(100),
+			Y: rand.Intn(100),
+		},
+	}
+}
+
 func createRandomPokemon() Pokemon {
 	return Pokemon{
 		UID: uuid.New().String(),
-		ID:  rand.Intn(898) + 1, // Random ID between 0 and 99
+		ID:  rand.Intn(898) + 1, // Random ID between 1 and 898
 		Exp: 0,
 		EV:  0.5 + rand.Float64()*0.5,
 		LV:  rand.Intn(5) + 1,
 	}
+}
+
+func createRandomPokemonWorldList(n int) PokemonWorldList {
+	list := PokemonWorldList{
+		PokemonWorlds: make([]PokemonWorld, n),
+	}
+	for i := 0; i < n; i++ {
+		list.PokemonWorlds[i] = createRandomPokemonWorld()
+	}
+	return list
 }
 
 func createRandomListPokemon(n int) []Pokemon {
@@ -47,6 +100,101 @@ func createRandomListPokemon(n int) []Pokemon {
 		listPokemon[i] = createRandomPokemon()
 	}
 	return listPokemon
+}
+
+func (s *Server) IntegrateMatchingPokemonIntoClients() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Load current clients' positions
+	clientsFile, err := os.Open(s.jsonFile)
+	if err != nil {
+		fmt.Printf("Error opening clients.json file: %v\n", err)
+		return
+	}
+	defer clientsFile.Close()
+
+	var clientsData map[string]interface{}
+	if err := json.NewDecoder(clientsFile).Decode(&clientsData); err != nil {
+		fmt.Printf("Error decoding clients.json file: %v\n", err)
+		return
+	}
+
+	// Load current Pokemon data
+	pokemonFile, err := os.Open("PokemonWorld.json")
+	if err != nil {
+		fmt.Printf("Error opening PokemonWorld.json file: %v\n", err)
+		return
+	}
+	defer pokemonFile.Close()
+
+	var pokemonWorldList PokemonWorldList
+	if err := json.NewDecoder(pokemonFile).Decode(&pokemonWorldList); err != nil {
+		fmt.Printf("Error decoding PokemonWorld.json file: %v\n", err)
+		return
+	}
+
+	// Check for matches and integrate Pokémon
+	for _, userInterface := range clientsData["user"].([]interface{}) {
+		user := userInterface.(map[string]interface{})
+		userPosX := int(user["positionX"].(float64))
+		userPosY := int(user["positionY"].(float64))
+
+		// Iterate over Pokemon, checking for matches with user positions
+		for i, pokemonWorld := range pokemonWorldList.PokemonWorlds {
+			if pokemonWorld.Position.X == userPosX && pokemonWorld.Position.Y == userPosY {
+				// Found a match, add this Pokemon to the user's listPokemon
+				pokemon := pokemonWorld.Pokemon
+
+				// Convert existing listPokemon to slice of Pokemon
+				var listPokemon []Pokemon
+				if user["listPokemon"] != nil {
+					for _, p := range user["listPokemon"].([]interface{}) {
+						pBytes, _ := json.Marshal(p)
+						var pokemonObj Pokemon
+						json.Unmarshal(pBytes, &pokemonObj)
+						listPokemon = append(listPokemon, pokemonObj)
+					}
+				}
+
+				listPokemon = append(listPokemon, pokemon)
+				user["listPokemon"] = listPokemon
+
+				// Remove this Pokemon from the PokemonWorldList since it's been integrated
+				pokemonWorldList.PokemonWorlds = append(pokemonWorldList.PokemonWorlds[:i], pokemonWorldList.PokemonWorlds[i+1:]...)
+				break
+			}
+		}
+	}
+
+	// Save the updated clients data back to the JSON file
+	clientsFile, err = os.Create(s.jsonFile)
+	if err != nil {
+		fmt.Printf("Error creating clients.json file: %v\n", err)
+		return
+	}
+	defer clientsFile.Close()
+
+	encoder := json.NewEncoder(clientsFile)
+	if err := encoder.Encode(clientsData); err != nil {
+		fmt.Printf("Error encoding clients data to JSON file: %v\n", err)
+		return
+	}
+
+	// Save the updated Pokemon data back to the JSON file
+	pokemonFile, err = os.Create("PokemonWorld.json")
+	if err != nil {
+		fmt.Printf("Error creating PokemonWorld.json file: %v\n", err)
+		return
+	}
+	defer pokemonFile.Close()
+
+	pokemonEncoder := json.NewEncoder(pokemonFile)
+	if err := pokemonEncoder.Encode(pokemonWorldList); err != nil {
+		fmt.Printf("Error encoding Pokemon data to JSON file: %v\n", err)
+		return
+	}
+	fmt.Println("complete####")
 }
 
 func NewServer(jsonFile string) *Server {
@@ -63,14 +211,19 @@ func NewServer(jsonFile string) *Server {
 }
 
 func (s *Server) startBroadcasting() {
+
 	for range s.broadcastTicker.C {
 		s.BroadcastToAllClients("This is a periodic message sent every 10 seconds.")
 		s.BroadcastToAllClients("REPEAT GET clients.json")
 
+		s.BroadcastToAllClients("This is a periodic message sent every 10 seconds.")
+
 		s.sendRandomDirectionToClients()
 		// Up Down Left Right (1, 2, 3, 4)
 		s.updateClientsPosition()
+		s.IntegrateMatchingPokemonIntoClients()
 	}
+
 }
 
 func (s *Server) updateClientsPosition() {
