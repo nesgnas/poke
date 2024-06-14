@@ -144,7 +144,7 @@ func NewServer(jsonFile string) *Server {
 	}
 
 	go server.startBroadcasting()
-	go server.startBroadcastingPoke()
+	// go server.startBroadcastingPoke()
 	return server
 }
 
